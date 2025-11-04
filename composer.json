@@ -1,15 +1,16 @@
 {
-    "name": "yiisoft/yii2-elasticsearch",
+    "name": "sygytyr/yii2-elasticsearch",
+    "homepage": "https://github.com/Sygytyr/yii2-mustache",
     "description": "Elasticsearch integration and ActiveRecord for the Yii framework",
     "keywords": ["yii2", "elasticsearch", "active-record", "search", "fulltext"],
     "type": "yii2-extension",
     "license": "BSD-3-Clause",
     "support": {
-        "issues": "https://github.com/yiisoft/yii2-elasticsearch/issues",
+        "issues": "https://github.com/Sygytyr/yii2-elasticsearch/issues",
         "forum": "https://www.yiiframework.com/forum/",
         "wiki": "https://www.yiiframework.com/wiki/",
         "irc": "ircs://irc.libera.chat:6697/yii",
-        "source": "https://github.com/yiisoft/yii2-elasticsearch"
+        "source": "https://github.com/Sygytyr/yii2-elasticsearch"
     },
     "authors": [
         {
