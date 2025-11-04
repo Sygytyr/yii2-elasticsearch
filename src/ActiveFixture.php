@@ -1,8 +1,8 @@
 <?php
 /**
- * @link https://www.yiiframework.com/
+ * @link http://www.yiiframework.com/
  * @copyright Copyright (c) 2008 Yii Software LLC
- * @license https://www.yiiframework.com/license/
+ * @license http://www.yiiframework.com/license/
  */
 
 namespace yii\elasticsearch;
@@ -90,12 +90,19 @@ class ActiveFixture extends BaseActiveFixture
         $this->resetIndex();
         $this->data = [];
 
-        $idField = '_id';
+        $mapping = $this->db->createCommand()->getMapping($this->index, $this->type);
+        if (isset($mapping[$this->index]['mappings'][$this->type]['_id']['path'])) {
+            $idField = $mapping[$this->index]['mappings'][$this->type]['_id']['path'];
+        } else {
+            $idField = '_id';
+        }
 
         foreach ($this->getData() as $alias => $row) {
             $options = [];
             $id = isset($row[$idField]) ? $row[$idField] : null;
-            unset($row[$idField]);
+            if ($idField === '_id') {
+                unset($row[$idField]);
+            }
             if (isset($row['_parent'])) {
                 $options['parent'] = $row['_parent'];
                 unset($row['_parent']);
@@ -112,7 +119,7 @@ class ActiveFixture extends BaseActiveFixture
             $this->data[$alias] = $row;
         }
         // ensure all data is flushed and immediately available in the test
-        $this->db->createCommand()->refreshIndex($this->index);
+        $this->db->createCommand()->flushIndex($this->index);
     }
 
     /**

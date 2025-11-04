@@ -1,36 +1,30 @@
 <?php
 /**
- * @link https://www.yiiframework.com/
- * @copyright Copyright (c) 2008 Yii Software LLC
- * @license https://www.yiiframework.com/license/
+ * Yii2 Elasticsearch QueryBuilder (Elasticsearch 8/9 compatible)
+ * - Replaces deprecated filters/types/_uid/missing syntax
+ * - Builds bool query with must/should/filter/must_not
+ * - Uses terms/ids/exists/range
+ *
+ * Notes:
+ *  - Top-level `filter` is not supported in ES8+. All filters go inside `query.bool.filter`.
+ *  - `_uid` was removed; use `_id` and the `ids` query.
+ *  - `missing` query deprecated; use `bool.must_not: { exists: { field: x } }`.
+ *  - Types removed in ES7+; the returned payload omits `type`.
+ *  - `fields` (pre-5) is different now. For old `$query->fields === []` we set `stored_fields` to []. For scripted fields use `script_fields`.
  */
 
 namespace yii\elasticsearch;
 
 use yii\base\BaseObject;
-use yii\base\InvalidArgumentException;
+use yii\base\InvalidParamException;
 use yii\base\NotSupportedException;
 use yii\helpers\Json;
 
-/**
- * QueryBuilder builds an Elasticsearch query based on the specification given as a [[Query]] object.
- *
- * @author Carsten Brandt <mail@cebe.cc>
- * @since 2.0
- */
 class QueryBuilder extends BaseObject
 {
-    /**
-     * @var Connection the database connection.
-     */
+    /** @var Connection */
     public $db;
 
-
-    /**
-     * Constructor.
-     * @param Connection $connection the database connection.
-     * @param array $config name-value pairs that will be used to initialize the object properties
-     */
     public function __construct($connection, $config = [])
     {
         $this->db = $connection;
@@ -38,102 +32,128 @@ class QueryBuilder extends BaseObject
     }
 
     /**
-     * Generates query from a [[Query]] object.
-     * @param Query $query the [[Query]] object from which the query will be generated
-     * @return array the generated SQL statement (the first array element) and the corresponding
-     * parameters to be bound to the SQL statement (the second array element).
+     * Build Elasticsearch 8/9 query body from Query object
+     *
+     * Expected Query fields (legacy Yii2 elastic extension compatible):
+     *  - index, where, filter, query, orderBy, limit, offset, minScore, explain,
+     *    fields, source, highlight, aggregations, stats, suggest, postFilter, options, timeout
      */
     public function build($query)
     {
-        $parts = [];
+        $body = [];
 
-        if ($query->storedFields !== null) {
-            $parts['stored_fields'] = $query->storedFields;
+        // === Fields / _source handling ===
+        // Legacy: $query->fields used to be pre-5 `fields` retrieval. ES8 uses stored_fields/docvalue_fields.
+        if ($query->fields === []) {
+            // request no stored fields in response
+            $body['stored_fields'] = [];
+        } elseif ($query->fields !== null) {
+            $fields = [];
+            $scriptFields = [];
+            foreach ($query->fields as $key => $field) {
+                if (is_int($key)) {
+                    // treat as docvalue_fields request for scalar fields
+                    $fields[] = $field;
+                } else {
+                    // script field
+                    $scriptFields[$key] = $field;
+                }
+            }
+            if (!empty($fields)) {
+                $body['docvalue_fields'] = $fields; // safer than legacy 'fields'
+            }
+            if (!empty($scriptFields)) {
+                $body['script_fields'] = $scriptFields;
+            }
         }
-        if ($query->scriptFields !== null) {
-            $parts['script_fields'] = $query->scriptFields;
-        }
-        if ($query->runtimeMappings !== null) {
-            $parts['runtime_mappings'] = $query->runtimeMappings;
-        }
-        if ($query->fields !== null) {
-            $parts['fields'] = $query->fields;
-        }
-
         if ($query->source !== null) {
-            $parts['_source'] = $query->source;
+            $body['_source'] = $query->source;
         }
+
         if ($query->limit !== null && $query->limit >= 0) {
-            $parts['size'] = $query->limit;
+            $body['size'] = (int)$query->limit;
         }
-        if ($query->offset > 0) {
-            $parts['from'] = (int)$query->offset;
+        if (!empty($query->offset)) {
+            $body['from'] = (int)$query->offset;
         }
         if (isset($query->minScore)) {
-            $parts['min_score'] = (float)$query->minScore;
+            $body['min_score'] = (float)$query->minScore;
         }
         if (isset($query->explain)) {
-            $parts['explain'] = $query->explain;
+            $body['explain'] = (bool)$query->explain;
         }
 
-        // combine query with where
-        $conditionals = [];
-        $whereQuery = $this->buildQueryFromWhere($query->where);
-        if ($whereQuery) {
-            $conditionals[] = $whereQuery;
+        // === Query / Bool composition ===
+        $mainQuery = empty($query->query) ? ['match_all' => (object)[]] : $query->query;
+
+        // Build filter from where + filter
+        $whereFilter = $this->buildCondition($query->where);
+        $extraFilter = $this->normalizeFilter($query->filter);
+
+        $bool = [];
+        // If $mainQuery is not a pure match_all, put it under must
+        if ($mainQuery !== ['match_all' => (object)[]]) {
+            $bool['must'][] = $mainQuery;
+        } else {
+            // keep match_all only if we have neither must nor filter
+            $bool['must'] = $bool['must'] ?? [];
         }
-        if ($query->query) {
-            $conditionals[] = $query->query;
+
+        // Merge filters into bool.filter
+        $filters = [];
+        if (!empty($whereFilter)) {
+            $filters[] = $whereFilter;
         }
-        if (count($conditionals) === 2) {
-            $parts['query'] = ['bool' => ['must' => $conditionals]];
-        } elseif (count($conditionals) === 1) {
-            $parts['query'] = reset($conditionals);
+        if (!empty($extraFilter)) {
+            $filters[] = $extraFilter;
+        }
+        if (!empty($filters)) {
+            $bool['filter'] = array_values($this->flattenBoolFilters($filters));
+        }
+
+        if (empty($bool)) {
+            $body['query'] = ['match_all' => (object)[]];
+        } else {
+            $body['query'] = ['bool' => $bool];
         }
 
         if (!empty($query->highlight)) {
-            $parts['highlight'] = $query->highlight;
+            $body['highlight'] = $query->highlight;
         }
         if (!empty($query->aggregations)) {
-            $parts['aggregations'] = $query->aggregations;
+            $body['aggs'] = $query->aggregations;
         }
         if (!empty($query->stats)) {
-            $parts['stats'] = $query->stats;
+            $body['stats'] = $query->stats;
         }
         if (!empty($query->suggest)) {
-            $parts['suggest'] = $query->suggest;
+            $body['suggest'] = $query->suggest;
         }
         if (!empty($query->postFilter)) {
-            $parts['post_filter'] = $query->postFilter;
-        }
-        if (!empty($query->collapse)) {
-            $parts['collapse'] = $query->collapse;
-        }
-        if ($query->search_after) {
-            $parts['search_after'] = $query->search_after;
+            // post_filter is still valid for ES8
+            $body['post_filter'] = $query->postFilter;
         }
 
         $sort = $this->buildOrderBy($query->orderBy);
         if (!empty($sort)) {
-            $parts['sort'] = $sort;
+            $body['sort'] = $sort;
         }
 
         $options = $query->options;
         if ($query->timeout !== null) {
+            // search request timeout, e.g. '2s'
             $options['timeout'] = $query->timeout;
         }
 
         return [
-            'queryParts' => $parts,
-            'index' => $query->index,
-            'type' => $query->type,
-            'options' => $options,
+            'queryParts' => $body,
+            'index'      => $query->index,
+            // 'type' removed in ES7+
+            'options'    => $options,
         ];
     }
 
-    /**
-     * adds order by condition to the query
-     */
+    /** Build ORDER BY for ES8 */
     public function buildOrderBy($columns)
     {
         if (empty($columns)) {
@@ -147,152 +167,117 @@ class QueryBuilder extends BaseObject
             } else {
                 $column = $name;
             }
-            if ($this->db->dslVersion < 7) {
-                if ($column == '_id') {
-                    $column = '_uid';
-                }
+            if ($column === '_uid') {
+                // _uid deprecated; fallback to _id if users had old code
+                $column = '_id';
             }
 
-            // allow Elasticsearch extended syntax as described in https://www.elastic.co/guide/en/elasticsearch/guide/master/_sorting.html
             if (is_array($direction)) {
+                // extended syntax already formatted
                 $orders[] = [$column => $direction];
             } else {
                 $orders[] = [$column => ($direction === SORT_DESC ? 'desc' : 'asc')];
             }
         }
-
         return $orders;
     }
 
-    public function buildQueryFromWhere($condition) {
-        $where = $this->buildCondition($condition);
-        if ($where) {
-            $query = [
-                'constant_score' => [
-                    'filter' => $where,
-                ],
-            ];
-            return $query;
-        } else {
-            return null;
-        }
-    }
-
     /**
-     * Parses the condition specification and generates the corresponding SQL expression.
-     *
-     * @param string|array $condition the condition specification. Please refer to [[Query::where()]] on how to specify a condition.
-     * @throws \yii\base\InvalidArgumentException if unknown operator is used in query
-     * @throws \yii\base\NotSupportedException if string conditions are used in where
-     * @return string the generated SQL expression
+     * Build a filter query clause (ES8) from condition spec.
+     * Returns an ES query clause (not top-level) suitable for bool.filter/must/must_not.
      */
     public function buildCondition($condition)
     {
         static $builders = [
             'not' => 'buildNotCondition',
-            'and' => 'buildBoolCondition',
-            'or' => 'buildBoolCondition',
+            'and' => 'buildAndCondition',
+            'or'  => 'buildOrCondition',
             'between' => 'buildBetweenCondition',
-            'not between' => 'buildBetweenCondition',
+            'not between' => 'buildNotBetweenCondition',
             'in' => 'buildInCondition',
-            'not in' => 'buildInCondition',
+            'not in' => 'buildNotInCondition',
             'like' => 'buildLikeCondition',
             'not like' => 'buildLikeCondition',
             'or like' => 'buildLikeCondition',
             'or not like' => 'buildLikeCondition',
-            'lt' => 'buildHalfBoundedRangeCondition',
-            '<' => 'buildHalfBoundedRangeCondition',
-            'lte' => 'buildHalfBoundedRangeCondition',
-            '<=' => 'buildHalfBoundedRangeCondition',
-            'gt' => 'buildHalfBoundedRangeCondition',
-            '>' => 'buildHalfBoundedRangeCondition',
-            'gte' => 'buildHalfBoundedRangeCondition',
-            '>=' => 'buildHalfBoundedRangeCondition',
-            'match' => 'buildMatchCondition',
-            'match_phrase' => 'buildMatchCondition',
+            'lt' => 'buildRangeOp', '<'  => 'buildRangeOp',
+            'lte'=> 'buildRangeOp', '<=' => 'buildRangeOp',
+            'gt' => 'buildRangeOp', '>'  => 'buildRangeOp',
+            'gte'=> 'buildRangeOp', '>=' => 'buildRangeOp',
         ];
 
         if (empty($condition)) {
             return [];
         }
         if (!is_array($condition)) {
-            throw new NotSupportedException('String conditions in where() are not supported by Elasticsearch.');
+            throw new NotSupportedException('String conditions in where() are not supported for ES8 builder.');
         }
-        if (isset($condition[0])) { // operator format: operator, operand 1, operand 2, ...
+        if (isset($condition[0])) {
             $operator = strtolower($condition[0]);
-            if (isset($builders[$operator])) {
-                $method = $builders[$operator];
-                array_shift($condition);
-
-                return $this->$method($operator, $condition);
-            } else {
-                throw new InvalidArgumentException('Found unknown operator in query: ' . $operator);
+            if (!isset($builders[$operator])) {
+                throw new InvalidParamException('Unknown operator in query: ' . $operator);
             }
-        } else { // hash format: 'column1' => 'value1', 'column2' => 'value2', ...
-
-            return $this->buildHashCondition($condition);
+            $method = $builders[$operator];
+            array_shift($condition);
+            return $this->$method($operator, $condition);
         }
+        return $this->buildHashCondition($condition);
     }
 
     private function buildHashCondition($condition)
     {
-        $parts = $emptyFields = [];
+        $clauses = [];
         foreach ($condition as $attribute => $value) {
-            if ($attribute == '_id') {
-                if ($value === null) { // there is no null pk
-                    $parts[] = ['bool' => ['must_not' => [['match_all' => new \stdClass()]]]]; // this condition is equal to WHERE false
+            if ($attribute === '_uid') {
+                $attribute = '_id'; // migrate
+            }
+            if ($attribute === '_id') {
+                if ($value === null) {
+                    // no null _id; represent as false filter (use term on impossible id)
+                    $clauses[] = ['term' => ['_id' => '__null__never__']];
                 } else {
-                    $parts[] = ['ids' => ['values' => is_array($value) ? $value : [$value]]];
+                    $ids = is_array($value) ? array_values($value) : [$value];
+                    $clauses[] = ['ids' => ['values' => $ids]];
                 }
+                continue;
+            }
+
+            if (is_array($value)) {
+                // IN condition
+                $clauses[] = ['terms' => [$attribute => array_values($value)]];
             } else {
-                if (is_array($value)) { // IN condition
-                    $parts[] = ['terms' => [$attribute => $value]];
+                if ($value === null) {
+                    $clauses[] = ['bool' => ['must_not' => [['exists' => ['field' => $attribute]]]]];
                 } else {
-                    if ($value === null) {
-                        $emptyFields[] = [ 'exists' => [ 'field' => $attribute ] ];
-                    } else {
-                        $parts[] = ['term' => [$attribute => $value]];
-                    }
+                    // exact term match (keyword field assumed)
+                    $clauses[] = ['term' => [$attribute => $value]];
                 }
             }
         }
-
-        $query = [ 'must' => $parts ];
-        if ($emptyFields) {
-            $query['must_not'] = $emptyFields;
+        if (count($clauses) === 1) {
+            return $clauses[0];
         }
-        return [ 'bool' => $query ];
+        return ['bool' => ['must' => $clauses]];
     }
 
     private function buildNotCondition($operator, $operands)
     {
-        if (count($operands) != 1) {
-            throw new InvalidArgumentException("Operator '$operator' requires exactly one operand.");
+        if (count($operands) !== 1) {
+            throw new InvalidParamException("Operator '$operator' requires exactly one operand.");
         }
-
         $operand = reset($operands);
         if (is_array($operand)) {
             $operand = $this->buildCondition($operand);
         }
-
-        return [
-            'bool' => [
-                'must_not' => $operand,
-            ],
-        ];
+        if (empty($operand)) {
+            return [];
+        }
+        return ['bool' => ['must_not' => [$operand]]];
     }
 
-    private function buildBoolCondition($operator, $operands)
+    private function buildAndCondition($operator, $operands)
     {
         $parts = [];
-        if ($operator === 'and') {
-            $clause = 'must';
-        } else if ($operator === 'or') {
-            $clause = 'should';
-        } else {
-            throw new InvalidArgumentException("Operator should be 'or' or 'and'");
-        }
-
         foreach ($operands as $operand) {
             if (is_array($operand)) {
                 $operand = $this->buildCondition($operand);
@@ -301,177 +286,166 @@ class QueryBuilder extends BaseObject
                 $parts[] = $operand;
             }
         }
-        if ($parts) {
-            return [
-                'bool' => [
-                    $clause => $parts,
-                ]
-            ];
-        } else {
-            return null;
+        if (empty($parts)) {
+            return [];
         }
+        return ['bool' => ['must' => $parts]];
+    }
+
+    private function buildOrCondition($operator, $operands)
+    {
+        $parts = [];
+        foreach ($operands as $operand) {
+            if (is_array($operand)) {
+                $operand = $this->buildCondition($operand);
+            }
+            if (!empty($operand)) {
+                $parts[] = $operand;
+            }
+        }
+        if (empty($parts)) {
+            return [];
+        }
+        return ['bool' => ['should' => $parts, 'minimum_should_match' => 1]];
     }
 
     private function buildBetweenCondition($operator, $operands)
     {
         if (!isset($operands[0], $operands[1], $operands[2])) {
-            throw new InvalidArgumentException("Operator '$operator' requires three operands.");
+            throw new InvalidParamException("Operator '$operator' requires three operands.");
         }
-
-        list($column, $value1, $value2) = $operands;
-        if ($column === '_id') {
+        [$column, $value1, $value2] = $operands;
+        if ($column === '_id' || $column === '_uid') {
             throw new NotSupportedException('Between condition is not supported for the _id field.');
         }
-        $filter = ['range' => [$column => ['gte' => $value1, 'lte' => $value2]]];
-        if ($operator === 'not between') {
-            $filter = ['bool' => ['must_not'=>$filter]];
-        }
+        return ['range' => [$column => ['gte' => $value1, 'lte' => $value2]]];
+    }
 
-        return $filter;
+    private function buildNotBetweenCondition($operator, $operands)
+    {
+        $clause = $this->buildBetweenCondition('between', $operands);
+        return ['bool' => ['must_not' => [$clause]]];
     }
 
     private function buildInCondition($operator, $operands)
     {
-        if (!isset($operands[0], $operands[1]) || !is_array($operands)) {
-            throw new InvalidArgumentException("Operator '$operator' requires array of two operands: column and values");
+        if (!isset($operands[0], $operands[1])) {
+            throw new InvalidParamException("Operator '$operator' requires two operands.");
         }
-
-        list($column, $values) = $operands;
-
-        $values = (array)$values;
-
-        if (empty($values) || $column === []) {
-            return $operator === 'in' ? ['bool' => ['must_not' => [['match_all' => new \stdClass()]]]] : []; // this condition is equal to WHERE false
-        }
-
+        [$column, $values] = $operands;
         if (is_array($column)) {
             if (count($column) > 1) {
-                return $this->buildCompositeInCondition($operator, $column, $values);
+                throw new NotSupportedException('Composite IN is not supported by Elasticsearch.');
             }
             $column = reset($column);
         }
-        $canBeNull = false;
-        foreach ($values as $i => $value) {
-            if (is_array($value)) {
-                $values[$i] = $value = isset($value[$column]) ? $value[$column] : null;
-            }
-            if ($value === null) {
-                $canBeNull = true;
-                unset($values[$i]);
-            }
-        }
+        $values = (array)$values;
+
+        if ($column === '_uid') $column = '_id';
         if ($column === '_id') {
-            if (empty($values) && $canBeNull) { // there is no null pk
-                $filter = ['bool' => ['must_not' => [['match_all' => new \stdClass()]]]]; // this condition is equal to WHERE false
-            } else {
-                $filter = ['ids' => ['values' => array_values($values)]];
-                if ($canBeNull) {
-                    $filter = [
-                        'bool' => [
-                            'should' => [
-                                $filter,
-                                'bool' => ['must_not' => ['exists' => ['field'=>$column]]],
-                            ],
-                        ],
-                    ];
-                }
+            if (empty($values)) {
+                // false condition
+                return ['term' => ['_id' => '__empty__never__']];
             }
-        } else {
-            if (empty($values) && $canBeNull) {
-                $filter = [
-                    'bool' => [
-                        'must_not' => [
-                            'exists' => [ 'field' => $column ],
-                        ]
-                    ]
-                ];
-            } else {
-                $filter = [ 'terms' => [$column => array_values($values)] ];
-                if ($canBeNull) {
-                    $filter = [
-                        'bool' => [
-                            'should' => [
-                                $filter,
-                                'bool' => ['must_not' => ['exists' => ['field'=>$column]]],
-                            ],
-                        ],
-                    ];
-                }
-            }
+            return ['ids' => ['values' => array_values($values)]];
         }
 
-        if ($operator === 'not in') {
-            $filter = [
-                'bool' => [
-                    'must_not' => $filter,
-                ],
-            ];
+        if (empty($values)) {
+            // no values => false condition
+            return ['term' => [$column => '__empty__never__']];
         }
+        return ['terms' => [$column => array_values($values)]];
+    }
 
-        return $filter;
+    private function buildNotInCondition($operator, $operands)
+    {
+        $clause = $this->buildInCondition('in', $operands);
+        return ['bool' => ['must_not' => [$clause]]];
+    }
+
+    private function buildRangeOp($operator, $operands)
+    {
+        if (!isset($operands[0], $operands[1])) {
+            throw new InvalidParamException("Operator '$operator' requires two operands.");
+        }
+        [$column, $value] = $operands;
+        if ($column === '_uid') $column = '_id';
+
+        $map = [
+            'gte' => 'gte', '>=' => 'gte',
+            'lte' => 'lte', '<=' => 'lte',
+            'gt'  => 'gt',  '>'  => 'gt',
+            'lt'  => 'lt',  '<'  => 'lt',
+        ];
+        if (!isset($map[$operator])) {
+            throw new InvalidParamException("Operator '$operator' is not implemented.");
+        }
+        return ['range' => [$column => [$map[$operator] => $value]]];
+    }
+
+    protected function buildLikeCondition($operator, $operands)
+    {
+        // ES does not support SQL LIKE directly. Provide sane defaults: wildcard for simple cases.
+        // ['like', 'field', 'foo'] => { "wildcard": { "field": "*foo*" } }
+        if (!isset($operands[0], $operands[1])) {
+            throw new InvalidParamException("Operator '$operator' requires two operands.");
+        }
+        [$column, $value] = $operands;
+        if ($value === null || $value === '') {
+            return [];
+        }
+        // escape * and ? minimally
+        $value = str_replace(['*','?'], ['\\*','\\?'], (string)$value);
+        $pattern = '*' . $value . '*';
+        return ['wildcard' => [$column => $pattern]];
     }
 
     /**
-     * Builds a half-bounded range condition
-     * (for "gt", ">", "gte", ">=", "lt", "<", "lte", "<=" operators)
-     * @param string $operator
-     * @param array $operands
-     * @return array Filter expression
+     * Normalize `$query->filter` (legacy string/array) to ES clause.
      */
-    private function buildHalfBoundedRangeCondition($operator, $operands)
+    private function normalizeFilter($filter)
     {
-        if (!isset($operands[0], $operands[1])) {
-            throw new InvalidArgumentException("Operator '$operator' requires two operands.");
+        if ($filter === null || $filter === []) {
+            return [];
         }
+        if (is_string($filter)) {
+            // try to decode JSON string; fall back to raw match_all if invalid
+            $decoded = null;
+            try {
+                $decoded = Json::decode($filter, true);
+            } catch (\Throwable $e) {
+                $decoded = null;
+            }
+            return is_array($decoded) ? $decoded : [];
+        }
+        if (is_array($filter)) {
+            return $filter;
+        }
+        return [];
+    }
 
-        list($column, $value) = $operands;
-        if ($this->db->dslVersion < 7) {
-            if ($column === '_id') {
-                $column = '_uid';
+    /**
+     * Flattens nested bool.filter arrays while preserving must/should/not semantics.
+     */
+    private function flattenBoolFilters(array $filters)
+    {
+        $flat = [];
+        foreach ($filters as $f) {
+            if (!is_array($f) || !isset($f['bool'])) {
+                $flat[] = $f;
+                continue;
+            }
+            // if it's a pure bool with only filter, merge its filter; else keep as-is
+            $b = $f['bool'];
+            $hasOnlyFilter = (isset($b['filter']) && count($b) === 1);
+            if ($hasOnlyFilter) {
+                foreach ((array)$b['filter'] as $inner) {
+                    $flat[] = $inner;
+                }
+            } else {
+                $flat[] = $f;
             }
         }
-
-        $range_operator = null;
-
-        if (in_array($operator, ['gte', '>='])) {
-            $range_operator = 'gte';
-        } elseif (in_array($operator, ['lte', '<='])) {
-            $range_operator = 'lte';
-        } elseif (in_array($operator, ['gt', '>'])) {
-            $range_operator = 'gt';
-        } elseif (in_array($operator, ['lt', '<'])) {
-            $range_operator = 'lt';
-        }
-
-        if ($range_operator === null) {
-            throw new InvalidArgumentException("Operator '$operator' is not implemented.");
-        }
-
-        $filter = [
-            'range' => [
-                $column => [
-                    $range_operator => $value
-                ]
-            ]
-        ];
-
-        return $filter;
-    }
-
-    protected function buildCompositeInCondition($operator, $columns, $values)
-    {
-        throw new NotSupportedException('composite in is not supported by Elasticsearch.');
-    }
-
-    private function buildLikeCondition($operator, $operands)
-    {
-        throw new NotSupportedException('like conditions are not supported by Elasticsearch.');
-    }
-
-    private function buildMatchCondition($operator, $operands)
-    {
-        return [
-            $operator => [ $operands[0] => $operands[1] ]
-        ];
+        return $flat;
     }
 }

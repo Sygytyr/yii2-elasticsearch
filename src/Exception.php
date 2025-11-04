@@ -1,14 +1,14 @@
 <?php
 /**
- * @link https://www.yiiframework.com/
+ * @link http://www.yiiframework.com/
  * @copyright Copyright (c) 2008 Yii Software LLC
- * @license https://www.yiiframework.com/license/
+ * @license http://www.yiiframework.com/license/
  */
 
 namespace yii\elasticsearch;
 
 /**
- * Exception represents an exception that is caused by Elasticsearch-related operations.
+ * Exception represents an exception that is caused by elasticsearch-related operations.
  *
  * @author Carsten Brandt <mail@cebe.cc>
  * @since 2.0

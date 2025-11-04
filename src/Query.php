@@ -1,42 +1,41 @@
 <?php
 /**
- * @link https://www.yiiframework.com/
+ * @link http://www.yiiframework.com/
  * @copyright Copyright (c) 2008 Yii Software LLC
- * @license https://www.yiiframework.com/license/
+ * @license http://www.yiiframework.com/license/
  */
 
 namespace yii\elasticsearch;
 
 use Yii;
 use yii\base\Component;
-use yii\base\InvalidArgumentException;
+use yii\base\InvalidParamException;
 use yii\db\QueryInterface;
 use yii\db\QueryTrait;
 
 /**
- * Query represents a query to the search API of Elasticsearch.
+ * Query represents a query to the search API of elasticsearch.
  *
- * Query provides a set of methods to facilitate the specification of different
- * parameters of the query. These methods can be chained together.
+ * Query provides a set of methods to facilitate the specification of different parameters of the query.
+ * These methods can be chained together.
  *
- * By calling [[createCommand()]], we can get a [[Command]] instance which can
- * be further used to perform/execute the DB query against a database.
+ * By calling [[createCommand()]], we can get a [[Command]] instance which can be further
+ * used to perform/execute the DB query against a database.
  *
  * For example,
  *
  * ~~~
  * $query = new Query;
- * $query->storedFields('id, name')
+ * $query->fields('id, name')
  *     ->from('myindex', 'users')
  *     ->limit(10);
  * // build and execute the query
  * $command = $query->createCommand();
- * $rows = $command->search(); // this way you get the raw output of Elasticsearch.
+ * $rows = $command->search(); // this way you get the raw output of elasticsearch.
  * ~~~
  *
- * You would normally call `$query->search()` instead of creating a command as
- * this method adds the `indexBy()` feature and also removes some
- * inconsistencies from the response.
+ * You would normally call `$query->search()` instead of creating a command as this method
+ * adds the `indexBy()` feature and also removes some inconsistencies from the response.
  *
  * Query also provides some methods to easier get some parts of the result only:
  *
@@ -47,9 +46,8 @@ use yii\db\QueryTrait;
  * - [[column()]]: returns the value of the first column in the query result.
  * - [[exists()]]: returns a value indicating whether the query result has data or not.
  *
- * NOTE: Elasticsearch limits the number of records returned to 10 records by
- * default. If you expect to get more records you should specify limit
- * explicitly.
+ * NOTE: elasticsearch limits the number of records returned to 10 records by default.
+ * If you expect to get more records you should specify limit explicitly.
  *
  * @author Carsten Brandt <mail@cebe.cc>
  * @since 2.0
@@ -59,28 +57,18 @@ class Query extends Component implements QueryInterface
     use QueryTrait;
 
     /**
-     * @var array the fields being retrieved from the documents. For example,
-     * `['id', 'name']`.  If not set, this option will not be applied to the
-     * query and no fields will be returned.  In this case the `_source` field
-     * will be returned by default which can be configured using [[source]].
-     * Setting this to an empty array will result in no fields being retrieved,
-     * which means that only the primaryKey of a record will be available in
-     * the result.
-     * > Note: Field values are [always returned as arrays] even if they only
-     * > have one value.
+     * @var array the fields being retrieved from the documents. For example, `['id', 'name']`.
+     * If not set, this option will not be applied to the query and no fields will be returned.
+     * In this case the `_source` field will be returned by default which can be configured using [[source]].
+     * Setting this to an empty array will result in no fields being retrieved, which means that only the primaryKey
+     * of a record will be available in the result.
      *
-     * [always returned as arrays]: https://www.elastic.co/guide/en/elasticsearch/reference/current/array.html
+     * For each field you may also add an array representing a [script field]. Example:
      *
-     * @see https://www.elastic.co/guide/en/elasticsearch/reference/current/search-request-stored-fields.html
-     * @see storedFields()
-     * @see source
-     */
-    public $storedFields;
-    /**
-     * @var array the scripted fields being retrieved from the documents.
-     * Example:
      * ```php
-     * $query->scriptFields = [
+     * $query->fields = [
+     *     'id',
+     *     'name',
      *     'value_times_two' => [
      *         'script' => "doc['my_field_name'].value * 2",
      *     ],
@@ -95,96 +83,57 @@ class Query extends Component implements QueryInterface
      *
      * > Note: Field values are [always returned as arrays] even if they only have one value.
      *
-     * [always returned as arrays]: https://www.elastic.co/guide/en/elasticsearch/reference/current/array.html
-     * [script field]: https://www.elastic.co/guide/en/elasticsearch/reference/current/search-request-script-fields.html
+     * [always returned as arrays]: http://www.elastic.co/guide/en/elasticsearch/reference/1.x/_return_values.html#_return_values
+     * [script field]: http://www.elastic.co/guide/en/elasticsearch/reference/current/search-request-script-fields.html
      *
-     * @see https://www.elastic.co/guide/en/elasticsearch/reference/current/search-request-script-fields.html
-     * @see scriptFields()
-     * @see source
-     */
-    public $scriptFields;
-    /**
-     * @var array An array of runtime fields evaluated at query time
-     * Example:
-     * ```php
-     * $query->$runtimeMappings = [
-     *     'value_times_two' => [
-     *         'type' => 'double',
-     *         'script' => "emit(doc['my_field_name'].value * 2)",
-     *     ],
-     *     'value_times_factor' => [
-     *         'type' => 'double',
-     *         'script' => "emit(doc['my_field_name'].value * factor)",
-     *         'params' => [
-     *             'factor' => 2.0
-     *         ],
-     *     ],
-     * ]
-     * ```
-     *
-     * @see https://www.elastic.co/guide/en/elasticsearch/reference/current/runtime-mapping-fields.html
-     * @see runtimeMappings()
-     * @see source
-     */
-    public $runtimeMappings;
-    /**
-     * @var array Use the fields parameter to retrieve the values of runtime fields. Runtime fields won’t display in
-     * _source, but the fields API works for all fields, even those that were not sent as part of the original _source.
-     * @see https://www.elastic.co/guide/en/elasticsearch/reference/current/runtime-retrieving-fields.html
+     * @see http://www.elastic.co/guide/en/elasticsearch/reference/current/search-request-fields.html#search-request-fields
+     * @see http://www.elastic.co/guide/en/elasticsearch/reference/current/search-request-script-fields.html
      * @see fields()
-     * @see fields
+     * @see source
      */
     public $fields;
     /**
-     * @var array this option controls how the `_source` field is returned from
-     * the documents. For example, `['id', 'name']` means that only the `id`
-     * and `name` field should be returned from `_source`.  If not set, it
-     * means retrieving the full `_source` field unless [[fields]] are
-     * specified.  Setting this option to `false` will disable return of the
-     * `_source` field, this means that only the primaryKey of a record will be
-     * available in the result.
-     * @see https://www.elastic.co/guide/en/elasticsearch/reference/current/search-request-source-filtering.html
+     * @var array this option controls how the `_source` field is returned from the documents. For example, `['id', 'name']`
+     * means that only the `id` and `name` field should be returned from `_source`.
+     * If not set, it means retrieving the full `_source` field unless [[fields]] are specified.
+     * Setting this option to `false` will disable return of the `_source` field, this means that only the primaryKey
+     * of a record will be available in the result.
+     * @see http://www.elastic.co/guide/en/elasticsearch/reference/current/search-request-source-filtering.html
      * @see source()
      * @see fields
      */
     public $source;
     /**
-     * @var string|array The index to retrieve data from. This can be a string
-     * representing a single index or a an array of multiple indexes. If this
-     * is not set, indexes are being queried.
+     * @var string|array The index to retrieve data from. This can be a string representing a single index
+     * or a an array of multiple indexes. If this is not set, indexes are being queried.
      * @see from()
      */
     public $index;
     /**
-     * @var string|array The type to retrieve data from. This can be a string
-     * representing a single type or a an array of multiple types. If this is
-     * not set, all types are being queried.
+     * @var string|array The type to retrieve data from. This can be a string representing a single type
+     * or a an array of multiple types. If this is not set, all types are being queried.
      * @see from()
      */
     public $type;
     /**
-     * @var integer A search timeout, bounding the search request to be
-     * executed within the specified time value and bail with the hits
-     * accumulated up to that point when expired. Defaults to no timeout.
+     * @var integer A search timeout, bounding the search request to be executed within the specified time value
+     * and bail with the hits accumulated up to that point when expired. Defaults to no timeout.
      * @see timeout()
-     * @see https://www.elastic.co/guide/en/elasticsearch/reference/current/search.html#global-search-timeout
+     * @see http://www.elastic.co/guide/en/elasticsearch/reference/current/search-request-body.html#_parameters_5
      */
     public $timeout;
     /**
-     * @var array|string The query part of this search query. This is an array
-     * or json string that follows the format of the elasticsearch
-     * [Query DSL](https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl.html).
+     * @var array|string The query part of this search query. This is an array or json string that follows the format of
+     * the elasticsearch [Query DSL](http://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl.html).
      */
     public $query;
     /**
-     * @var array|string The filter part of this search query. This is an array
-     * or json string that follows the format of the elasticsearch
-     * [Query DSL](https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl.html).
+     * @var array|string The filter part of this search query. This is an array or json string that follows the format of
+     * the elasticsearch [Query DSL](http://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl.html).
      */
     public $filter;
     /**
-     * @var string|array The `post_filter` part of the search query for
-     * differentially filter search results and aggregations.
+     * @var string|array The `post_filter` part of the search query for differentially filter search results and aggregations.
      * @see https://www.elastic.co/guide/en/elasticsearch/guide/current/_post_filter.html
      * @since 2.0.5
      */
@@ -192,35 +141,27 @@ class Query extends Component implements QueryInterface
     /**
      * @var array The highlight part of this search query. This is an array that allows to highlight search results
      * on one or more fields.
-     * @see https://www.elastic.co/guide/en/elasticsearch/reference/current/search-request-highlighting.html
+     * @see http://www.elastic.co/guide/en/elasticsearch/reference/current/search-request-highlighting.html
      */
     public $highlight;
     /**
      * @var array List of aggregations to add to this query.
-     * @see https://www.elastic.co/guide/en/elasticsearch/reference/current/search-aggregations.html
+     * @see http://www.elastic.co/guide/en/elasticsearch/reference/current/search-aggregations.html
      */
     public $aggregations = [];
     /**
-     * @var array the 'stats' part of the query. An array of groups to maintain
-     * a statistics aggregation for.
-     * @see https://www.elastic.co/guide/en/elasticsearch/reference/current/search.html#stats-groups
+     * @var array the 'stats' part of the query. An array of groups to maintain a statistics aggregation for.
+     * @see http://www.elastic.co/guide/en/elasticsearch/reference/current/search.html#stats-groups
      */
     public $stats = [];
     /**
      * @var array list of suggesters to add to this query.
-     * @see https://www.elastic.co/guide/en/elasticsearch/reference/current/search-suggesters.html
+     * @see http://www.elastic.co/guide/en/elasticsearch/reference/current/search-suggesters.html
      */
     public $suggest = [];
     /**
-     * @var array list of collapse to add to this query.
-     * @see https://www.elastic.co/guide/en/elasticsearch/reference/current/search-suggesters.html
-     * @since 2.1.0
-     */
-    public $collapse = [];
-    /**
-     * @var float Exclude documents which have a _score less than the minimum
-     * specified in min_score
-     * @see https://www.elastic.co/guide/en/elasticsearch/reference/current/search-request-min-score.html
+     * @var float Exclude documents which have a _score less than the minimum specified in min_score
+     * @see http://www.elastic.co/guide/en/elasticsearch/reference/current/search-request-min-score.html
      * @since 2.0.4
      */
     public $minScore;
@@ -236,12 +177,6 @@ class Query extends Component implements QueryInterface
      * @since 2.0.5
      */
     public $explain;
-    /**
-     * @var array Allows pagination of large datasets.
-     * @see https://www.elastic.co/guide/en/elasticsearch/reference/current/paginate-search-results.html#search-after
-     * @since 2.1.5
-     */
-    public $search_after = [];
 
 
     /**
@@ -250,8 +185,8 @@ class Query extends Component implements QueryInterface
     public function init()
     {
         parent::init();
-        // setting the default limit according to Elasticsearch defaults
-        // https://www.elastic.co/guide/en/elasticsearch/reference/current/search-request-body.html#_parameters_5
+        // setting the default limit according to elasticsearch defaults
+        // http://www.elastic.co/guide/en/elasticsearch/reference/current/search-request-body.html#_parameters_5
         if ($this->limit === null) {
             $this->limit = 10;
         }
@@ -260,8 +195,7 @@ class Query extends Component implements QueryInterface
     /**
      * Creates a DB command that can be used to execute this query.
      * @param Connection $db the database connection used to execute the query.
-     * If this parameter is not given, the `elasticsearch` application
-     * component will be used.
+     * If this parameter is not given, the `elasticsearch` application component will be used.
      * @return Command the created DB command instance.
      */
     public function createCommand($db = null)
@@ -269,7 +203,9 @@ class Query extends Component implements QueryInterface
         if ($db === null) {
             $db = Yii::$app->get('elasticsearch');
         }
+
         $commandConfig = $db->getQueryBuilder()->build($this);
+
         return $db->createCommand($commandConfig);
     }
 
@@ -285,9 +221,6 @@ class Query extends Component implements QueryInterface
             return [];
         }
         $result = $this->createCommand($db)->search();
-        if ($result === false) {
-            throw new Exception('Elasticsearch search query failed.');
-        }
         if (empty($result['hits']['hits'])) {
             return [];
         }
@@ -296,9 +229,9 @@ class Query extends Component implements QueryInterface
     }
 
     /**
-     * Converts the raw query results into the format as specified by this
-     * query. This method is internally used to convert the data fetched from
-     * database into the format as required by this query.
+     * Converts the raw query results into the format as specified by this query.
+     * This method is internally used to convert the data fetched from database
+     * into the format as required by this query.
      * @param array $rows the raw query result from database
      * @return array the converted query result
      * @since 2.0.4
@@ -312,8 +245,7 @@ class Query extends Component implements QueryInterface
         foreach ($rows as $key => $row) {
             if ($this->indexBy !== null) {
                 if (is_string($this->indexBy)) {
-                    $key = isset($row['fields'][$this->indexBy]) ?
-                        reset($row['fields'][$this->indexBy]) : $row['_source'][$this->indexBy];
+                    $key = isset($row['fields'][$this->indexBy]) ? reset($row['fields'][$this->indexBy]) : $row['_source'][$this->indexBy];
                 } else {
                     $key = call_user_func($this->indexBy, $row);
                 }
@@ -326,10 +258,9 @@ class Query extends Component implements QueryInterface
     /**
      * Executes the query and returns a single row of result.
      * @param Connection $db the database connection used to execute the query.
-     * If this parameter is not given, the `elasticsearch` application
-     * component will be used.
-     * @return array|bool the first row (in terms of an array) of the query
-     * result. False is returned if the query results in nothing.
+     * If this parameter is not given, the `elasticsearch` application component will be used.
+     * @return array|bool the first row (in terms of an array) of the query result. False is returned if the query
+     * results in nothing.
      */
     public function one($db = null)
     {
@@ -337,9 +268,6 @@ class Query extends Component implements QueryInterface
             return false;
         }
         $result = $this->createCommand($db)->search(['size' => 1]);
-        if ($result === false) {
-            throw new Exception('Elasticsearch search query failed.');
-        }
         if (empty($result['hits']['hits'])) {
             return false;
         }
@@ -349,15 +277,13 @@ class Query extends Component implements QueryInterface
     }
 
     /**
-     * Executes the query and returns the complete search result including e.g.
-     * hits, aggregations, suggesters, totalCount.
+     * Executes the query and returns the complete search result including e.g. hits, facets, totalCount.
      * @param Connection $db the database connection used to execute the query.
-     * If this parameter is not given, the `elasticsearch` application
-     * component will be used.
-     * @param array $options The options given with this query. Possible
-     * options are:
+     * If this parameter is not given, the `elasticsearch` application component will be used.
+     * @param array $options The options given with this query. Possible options are:
      *
-     *  - [routing](https://www.elastic.co/guide/en/elasticsearch/reference/current/search.html#search-routing)
+     *  - [routing](http://www.elastic.co/guide/en/elasticsearch/reference/current/search.html#search-routing)
+     *  - [search_type](http://www.elastic.co/guide/en/elasticsearch/reference/current/search-request-search-type.html)
      *
      * @return array the query results.
      */
@@ -372,15 +298,11 @@ class Query extends Component implements QueryInterface
             ];
         }
         $result = $this->createCommand($db)->search($options);
-        if ($result === false) {
-            throw new Exception('Elasticsearch search query failed.');
-        }
         if (!empty($result['hits']['hits']) && $this->indexBy !== null) {
             $rows = [];
             foreach ($result['hits']['hits'] as $key => $row) {
                 if (is_string($this->indexBy)) {
-                    $key = isset($row['fields'][$this->indexBy]) ?
-                        $row['fields'][$this->indexBy] : $row['_source'][$this->indexBy];
+                    $key = isset($row['fields'][$this->indexBy]) ? $row['fields'][$this->indexBy] : $row['_source'][$this->indexBy];
                 } else {
                     $key = call_user_func($this->indexBy, $row);
                 }
@@ -391,14 +313,15 @@ class Query extends Component implements QueryInterface
         return $result;
     }
 
+    // TODO add scroll/scan http://www.elastic.co/guide/en/elasticsearch/reference/current/search-request-search-type.html#scan
+
     /**
      * Executes the query and deletes all matching documents.
      *
      * Everything except query and filter will be ignored.
      *
      * @param Connection $db the database connection used to execute the query.
-     * If this parameter is not given, the `elasticsearch` application
-     * component will be used.
+     * If this parameter is not given, the `elasticsearch` application component will be used.
      * @param array $options The options given with this query.
      * @return array the query results.
      */
@@ -411,15 +334,13 @@ class Query extends Component implements QueryInterface
     }
 
     /**
-     * Returns the query result as a scalar value. The value returned will be
-     * the specified field in the first document of the query results.
+     * Returns the query result as a scalar value.
+     * The value returned will be the specified field in the first document of the query results.
      * @param string $field name of the attribute to select
      * @param Connection $db the database connection used to execute the query.
-     * If this parameter is not given, the `elasticsearch` application
-     * component will be used.
-     * @return string the value of the specified attribute in the first record
-     * of the query result. Null is returned if the query result is empty or
-     * the field does not exist.
+     * If this parameter is not given, the `elasticsearch` application component will be used.
+     * @return string the value of the specified attribute in the first record of the query result.
+     * Null is returned if the query result is empty or the field does not exist.
      */
     public function scalar($field, $db = null)
     {
@@ -443,10 +364,8 @@ class Query extends Component implements QueryInterface
      * Executes the query and returns the first column of the result.
      * @param string $field the field to query over
      * @param Connection $db the database connection used to execute the query.
-     * If this parameter is not given, the `elasticsearch` application
-     * component will be used.
-     * @return array the first column of the query result. An empty array is
-     * returned if the query results in nothing.
+     * If this parameter is not given, the `elasticsearch` application component will be used.
+     * @return array the first column of the query result. An empty array is returned if the query results in nothing.
      */
     public function column($field, $db = null)
     {
@@ -456,9 +375,6 @@ class Query extends Component implements QueryInterface
         $command = $this->createCommand($db);
         $command->queryParts['_source'] = [$field];
         $result = $command->search();
-        if ($result === false) {
-            throw new Exception('Elasticsearch search query failed.');
-        }
         if (empty($result['hits']['hits'])) {
             return [];
         }
@@ -479,8 +395,7 @@ class Query extends Component implements QueryInterface
      * Returns the number of records.
      * @param string $q the COUNT expression. This parameter is ignored by this implementation.
      * @param Connection $db the database connection used to execute the query.
-     * If this parameter is not given, the `elasticsearch` application
-     * component will be used.
+     * If this parameter is not given, the `elasticsearch` application component will be used.
      * @return int number of records
      */
     public function count($q = '*', $db = null)
@@ -488,34 +403,21 @@ class Query extends Component implements QueryInterface
         if ($this->emulateExecution) {
             return 0;
         }
+        // TODO consider sending to _count api instead of _search for performance
+        // only when no facety are registerted.
+        // http://www.elastic.co/guide/en/elasticsearch/reference/current/search-count.html
+        // http://www.elastic.co/guide/en/elasticsearch/reference/1.x/_search_requests.html
 
-        $command = $this->createCommand($db);
+        $options = [];
+        $options['search_type'] = 'count';
 
-        // performing a query with return size of 0, is equal to getting result stats such as count
-        // https://www.elastic.co/guide/en/elasticsearch/reference/5.6/breaking_50_search_changes.html#_literal_search_type_literal
-        $searchOptions = ['size' => 0];
-
-        // Set track_total_hits to 'true' for ElasticSearch version 6 and up
-        // https://www.elastic.co/guide/en/elasticsearch/reference/master/search-your-data.html#track-total-hits
-        if ($command->db->dslVersion >= 6) {
-            $searchOptions['track_total_hits'] = 'true';
-        }
-
-        $result = $command->search($searchOptions);
-
-        // since ES7 totals are returned as array (with count and precision values)
-        if (isset($result['hits']['total'])) {
-            return is_array($result['hits']['total']) ? (int)$result['hits']['total']['value'] : (int)$result['hits']['total'];
-        }
-        return 0;
+        return $this->createCommand($db)->search($options)['hits']['total'];
     }
 
     /**
-     * Returns a value indicating whether the query result contains any row of
-     * data.
+     * Returns a value indicating whether the query result contains any row of data.
      * @param Connection $db the database connection used to execute the query.
-     * If this parameter is not given, the `elasticsearch` application
-     * component will be used.
+     * If this parameter is not given, the `elasticsearch` application component will be used.
      * @return bool whether the query result contains any row of data.
      */
     public function exists($db = null)
@@ -527,7 +429,7 @@ class Query extends Component implements QueryInterface
      * Adds a 'stats' part to the query.
      * @param array $groups an array of groups to maintain a statistics aggregation for.
      * @return $this the query object itself
-     * @see https://www.elastic.co/guide/en/elasticsearch/reference/current/search.html#stats-groups
+     * @see http://www.elastic.co/guide/en/elasticsearch/reference/current/search.html#stats-groups
      */
     public function stats($groups)
     {
@@ -539,7 +441,7 @@ class Query extends Component implements QueryInterface
      * Sets a highlight parameters to retrieve from the documents.
      * @param array $highlight array of parameters to highlight results.
      * @return $this the query object itself
-     * @see https://www.elastic.co/guide/en/elasticsearch/reference/current/search-request-highlighting.html
+     * @see http://www.elastic.co/guide/en/elasticsearch/reference/current/search-request-highlighting.html
      */
     public function highlight($highlight)
     {
@@ -552,12 +454,10 @@ class Query extends Component implements QueryInterface
      *
      * Adds an aggregation to this query.
      * @param string $name the name of the aggregation
-     * @param string $type the aggregation type. e.g. `terms`, `range`,
-     * `histogram`, ...
-     * @param string|array $options the configuration options for this
-     * aggregation. Can be an array or a json string.
+     * @param string $type the aggregation type. e.g. `terms`, `range`, `histogram`...
+     * @param string|array $options the configuration options for this aggregation. Can be an array or a json string.
      * @return $this the query object itself
-     * @see https://www.elastic.co/guide/en/elasticsearch/reference/current/search-aggregations.html
+     * @see http://www.elastic.co/guide/en/elasticsearch/reference/current/search-aggregations.html
      */
     public function addAggregation($name, $type, $options)
     {
@@ -565,7 +465,7 @@ class Query extends Component implements QueryInterface
     }
 
     /**
-     * @deprecated since 2.0.5 use addAggregate() instead
+     * @deprecated since 2.0.5 use addAggragate() instead
      *
      * Adds an aggregation to this query.
      *
@@ -573,10 +473,9 @@ class Query extends Component implements QueryInterface
      *
      * @param string $name the name of the aggregation
      * @param string $type the aggregation type. e.g. `terms`, `range`, `histogram`...
-     * @param string|array $options the configuration options for this
-     * aggregation. Can be an array or a json string.
+     * @param string|array $options the configuration options for this aggregation. Can be an array or a json string.
      * @return $this the query object itself
-     * @see https://www.elastic.co/guide/en/elasticsearch/reference/current/search-aggregations.html
+     * @see http://www.elastic.co/guide/en/elasticsearch/reference/current/search-aggregations.html
      */
     public function addAgg($name, $type, $options)
     {
@@ -586,8 +485,8 @@ class Query extends Component implements QueryInterface
     /**
      * Adds an aggregation to this query. Supports nested aggregations.
      * @param string $name the name of the aggregation
-     * @param string|array $options the configuration options for this
-     * aggregation. Can be an array or a json string.
+     * @param string $type the aggregation type. e.g. `terms`, `range`, `histogram`...
+     * @param string|array $options the configuration options for this aggregation. Can be an array or a json string.
      * @return $this the query object itself
      * @see https://www.elastic.co/guide/en/elasticsearch/reference/2.3/search-aggregations.html
      */
@@ -596,14 +495,12 @@ class Query extends Component implements QueryInterface
         $this->aggregations[$name] = $options;
         return $this;
     }
-
     /**
      * Adds a suggester to this query.
      * @param string $name the name of the suggester
-     * @param string|array $definition the configuration options for this
-     * suggester. Can be an array or a json string.
+     * @param string|array $definition the configuration options for this suggester. Can be an array or a json string.
      * @return $this the query object itself
-     * @see https://www.elastic.co/guide/en/elasticsearch/reference/current/search-suggesters.html
+     * @see http://www.elastic.co/guide/en/elasticsearch/reference/current/search-suggesters.html
      */
     public function addSuggester($name, $definition)
     {
@@ -611,22 +508,9 @@ class Query extends Component implements QueryInterface
         return $this;
     }
 
-    /**
-     * Adds a collapse to this query.
-     * @param array $collapse the configuration options for collapse.
-     * @return $this the query object itself
-     * @see https://www.elastic.co/guide/en/elasticsearch/reference/5.3/search-request-collapse.html#search-request-collapse
-     * @since 2.1.0
-     */
-    public function addCollapse($collapse)
-    {
-        $this->collapse = $collapse;
-        return $this;
-    }
+    // TODO add validate query http://www.elastic.co/guide/en/elasticsearch/reference/current/search-validate.html
 
-    // TODO add validate query https://www.elastic.co/guide/en/elasticsearch/reference/current/search-validate.html
-
-    // TODO support multi query via static method https://www.elastic.co/guide/en/elasticsearch/reference/current/search-multi-search.html
+    // TODO support multi query via static method http://www.elastic.co/guide/en/elasticsearch/reference/current/search-multi-search.html
 
     /**
      * Sets the query part of this search query.
@@ -642,10 +526,9 @@ class Query extends Component implements QueryInterface
     /**
      * Starts a batch query.
      *
-     * A batch query supports fetching data in batches, which can keep the
-     * memory usage under a limit. This method will return a [[BatchQueryResult]]
-     * object which implements the [[\Iterator]] interface and can be traversed
-     * to retrieve the data in batches.
+     * A batch query supports fetching data in batches, which can keep the memory usage under a limit.
+     * This method will return a [[BatchQueryResult]] object which implements the [[\Iterator]] interface
+     * and can be traversed to retrieve the data in batches.
      *
      * For example,
      *
@@ -656,17 +539,13 @@ class Query extends Component implements QueryInterface
      * }
      * ```
      *
-     * Batch size is determined by the `limit` setting (note that in scan mode
-     * batch limit is per shard).
+     * Batch size is determined by the `limit` setting (note that in scan mode batch limit is per shard).
      *
-     * @param string $scrollWindow how long Elasticsearch should keep the
-     * search context alive, in
-     * [time units](https://www.elastic.co/guide/en/elasticsearch/reference/current/common-options.html#time-units)
-     * @param Connection $db the database connection. If not set, the
-     * `elasticsearch` application component will be used.
-     * @return BatchQueryResult the batch query result. It implements the
-     * [[\Iterator]] interface and can be traversed to retrieve the data in
-     * batches.
+     * @param string $scrollWindow how long Elasticsearch should keep the search context alive,
+     * in [time units](https://www.elastic.co/guide/en/elasticsearch/reference/current/common-options.html#time-units)
+     * @param Connection $db the database connection. If not set, the `elasticsearch` application component will be used.
+     * @return BatchQueryResult the batch query result. It implements the [[\Iterator]] interface
+     * and can be traversed to retrieve the data in batches.
      * @since 2.0.4
      */
     public function batch($scrollWindow = '1m', $db = null)
@@ -682,9 +561,8 @@ class Query extends Component implements QueryInterface
 
     /**
      * Starts a batch query and retrieves data row by row.
-     *
-     * This method is similar to [[batch()]] except that in each iteration of
-     * the result, only one row of data is returned. For example,
+     * This method is similar to [[batch()]] except that in each iteration of the result,
+     * only one row of data is returned. For example,
      *
      * ```php
      * $query = (new Query)->from('user');
@@ -692,14 +570,11 @@ class Query extends Component implements QueryInterface
      * }
      * ```
      *
-     * @param string $scrollWindow how long Elasticsearch should keep the
-     * search context alive, in
-     * [time units](https://www.elastic.co/guide/en/elasticsearch/reference/current/common-options.html#time-units)
-     * @param Connection $db the database connection. If not set, the
-     * `elasticsearch` application component will be used.
-     * @return BatchQueryResult the batch query result. It implements the
-     * [[\Iterator]] interface and can be traversed to retrieve the data in
-     * batches.
+     * @param string $scrollWindow how long Elasticsearch should keep the search context alive,
+     * in [time units](https://www.elastic.co/guide/en/elasticsearch/reference/current/common-options.html#time-units)
+     * @param Connection $db the database connection. If not set, the `elasticsearch` application component will be used.
+     * @return BatchQueryResult the batch query result. It implements the [[\Iterator]] interface
+     * and can be traversed to retrieve the data in batches.
      * @since 2.0.4
      */
     public function each($scrollWindow = '1m', $db = null)
@@ -714,15 +589,24 @@ class Query extends Component implements QueryInterface
     }
 
     /**
-     * Sets the index and type to retrieve documents from.
-     * @param string|array $index The index to retrieve data from. This can be
-     * a string representing a single index or a an array of multiple indexes.
-     * If this is `null` it means that all indexes are being queried.
-     * @param string|array $type The type to retrieve data from. This can be a
-     * string representing a single type or a an array of multiple types. If
-     * this is `null` it means that all types are being queried.
+     * Sets the filter part of this search query.
+     * @param string $filter
      * @return $this the query object itself
-     * @see https://www.elastic.co/guide/en/elasticsearch/reference/current/search-search.html#search-multi-index-type
+     */
+    public function filter($filter)
+    {
+        $this->filter = $filter;
+        return $this;
+    }
+
+    /**
+     * Sets the index and type to retrieve documents from.
+     * @param string|array $index The index to retrieve data from. This can be a string representing a single index
+     * or a an array of multiple indexes. If this is `null` it means that all indexes are being queried.
+     * @param string|array $type The type to retrieve data from. This can be a string representing a single type
+     * or a an array of multiple types. If this is `null` it means that all types are being queried.
+     * @return $this the query object itself
+     * @see http://www.elastic.co/guide/en/elasticsearch/reference/current/search-search.html#search-multi-index-type
      */
     public function from($index, $type = null)
     {
@@ -733,64 +617,9 @@ class Query extends Component implements QueryInterface
 
     /**
      * Sets the fields to retrieve from the documents.
-     *
-     * Quote from the Elasticsearch doc:
-     * > The stored_fields parameter is about fields that are explicitly marked
-     * > as stored in the mapping, which is off by default and generally not
-     * > recommended. Use source filtering instead to select subsets of the
-     * > original source document to be returned.
-     *
      * @param array $fields the fields to be selected.
      * @return $this the query object itself
-     * @see https://www.elastic.co/guide/en/elasticsearch/reference/current/search-request-stored-fields.html
-     */
-    public function storedFields($fields)
-    {
-        if (is_array($fields) || $fields === null) {
-            $this->storedFields = $fields;
-        } else {
-            $this->storedFields = func_get_args();
-        }
-        return $this;
-    }
-
-    /**
-     * Sets the script fields to retrieve from the documents.
-     * @param array $fields the fields to be selected.
-     * @return $this the query object itself
-     * @see https://www.elastic.co/guide/en/elasticsearch/reference/current/search-request-script-fields.html
-     */
-    public function scriptFields($fields)
-    {
-        if (is_array($fields) || $fields === null) {
-            $this->scriptFields = $fields;
-        } else {
-            $this->scriptFields = func_get_args();
-        }
-        return $this;
-    }
-
-    /**
-     * Sets the runtime mappings for this query
-     * @param $mappings
-     * @return $this the query object itself
-     * @see https://www.elastic.co/guide/en/elasticsearch/reference/current/runtime.html
-     */
-    public function runtimeMappings($mappings)
-    {
-        if (is_array($mappings) || $mappings === null) {
-            $this->runtimeMappings = $mappings;
-        } else {
-            $this->runtimeMappings = func_get_args();
-        }
-        return $this;
-    }
-
-    /**
-     * Sets the runtime fields to retrieve from the documents.
-     * @param array $fields the fields to be selected.
-     * @return $this the query object itself
-     * @see https://www.elastic.co/guide/en/elasticsearch/reference/current/runtime-retrieving-fields.html
+     * @see http://www.elastic.co/guide/en/elasticsearch/reference/current/search-request-fields.html
      */
     public function fields($fields)
     {
@@ -803,15 +632,14 @@ class Query extends Component implements QueryInterface
     }
 
     /**
-     * Sets the source filtering, specifying how the `_source` field of the
-     * document should be returned.
-     * @param array|string|null|false $source the source patterns to be selected.
+     * Sets the source filtering, specifying how the `_source` field of the document should be returned.
+     * @param array $source the source patterns to be selected.
      * @return $this the query object itself
-     * @see https://www.elastic.co/guide/en/elasticsearch/reference/current/search-request-source-filtering.html
+     * @see http://www.elastic.co/guide/en/elasticsearch/reference/current/search-request-source-filtering.html
      */
     public function source($source)
     {
-        if (is_array($source) || $source === null  || $source === false) {
+        if (is_array($source) || $source === null) {
             $this->source = $source;
         } else {
             $this->source = func_get_args();
@@ -821,11 +649,10 @@ class Query extends Component implements QueryInterface
 
     /**
      * Sets the search timeout.
-     * @param int $timeout A search timeout, bounding the search request to
-     * be executed within the specified time value and bail with the hits
-     * accumulated up to that point when expired. Defaults to no timeout.
+     * @param int $timeout A search timeout, bounding the search request to be executed within the specified time value
+     * and bail with the hits accumulated up to that point when expired. Defaults to no timeout.
      * @return $this the query object itself
-     * @see https://www.elastic.co/guide/en/elasticsearch/reference/current/search-request-body.html#_parameters_5
+     * @see http://www.elastic.co/guide/en/elasticsearch/reference/current/search-request-body.html#_parameters_5
      */
     public function timeout($timeout)
     {
@@ -834,10 +661,9 @@ class Query extends Component implements QueryInterface
     }
 
     /**
-     * @param float $minScore Exclude documents which have a `_score` less than
-     * the minimum specified minScore
-     * @return $this the query object itself
-     * @see https://www.elastic.co/guide/en/elasticsearch/reference/current/search-request-min-score.html
+     * @param float $minScore Exclude documents which have a `_score` less than the minimum specified minScore
+     * @return static the query object itself
+     * @see http://www.elastic.co/guide/en/elasticsearch/reference/current/search-request-min-score.html
      * @since 2.0.4
      */
     public function minScore($minScore)
@@ -850,14 +676,14 @@ class Query extends Component implements QueryInterface
      * Sets the options to be passed to the command created by this query.
      * @param array $options the options to be set.
      * @return $this the query object itself
-     * @throws InvalidArgumentException if $options is not an array
+     * @throws InvalidParamException if $options is not an array
      * @see Command::$options
      * @since 2.0.4
      */
     public function options($options)
     {
         if (!is_array($options)) {
-            throw new InvalidArgumentException('Array parameter expected, ' . gettype($options) . ' received.');
+            throw new InvalidParamException('Array parameter expected, ' . gettype($options) . ' received.');
         }
 
         $this->options = $options;
@@ -868,47 +694,17 @@ class Query extends Component implements QueryInterface
      * Adds more options, overwriting existing options.
      * @param array $options the options to be added.
      * @return $this the query object itself
-     * @throws InvalidArgumentException if $options is not an array
+     * @throws InvalidParamException if $options is not an array
      * @see options()
      * @since 2.0.4
      */
     public function addOptions($options)
     {
         if (!is_array($options)) {
-            throw new InvalidArgumentException('Array parameter expected, ' . gettype($options) . ' received.');
+            throw new InvalidParamException('Array parameter expected, ' . gettype($options) . ' received.');
         }
 
         $this->options = array_merge($this->options, $options);
-        return $this;
-    }
-
-    /**
-     * @inheritdoc
-     */
-    public function andWhere($condition)
-    {
-        if ($this->where === null) {
-            $this->where = $condition;
-        } else if (isset($this->where[0]) && $this->where[0] === 'and') {
-            $this->where[] = $condition;
-        } else {
-            $this->where = ['and', $this->where, $condition];
-        }
-        return $this;
-    }
-
-    /**
-     * @inheritdoc
-     */
-    public function orWhere($condition)
-    {
-        if ($this->where === null) {
-            $this->where = $condition;
-        } else if (isset($this->where[0]) && $this->where[0] === 'or') {
-            $this->where[] = $condition;
-        } else {
-            $this->where = ['or', $this->where, $condition];
-        }
         return $this;
     }
 

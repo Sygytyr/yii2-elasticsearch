@@ -1,8 +1,8 @@
 <?php
 /**
- * @link https://www.yiiframework.com/
+ * @link http://www.yiiframework.com/
  * @copyright Copyright (c) 2008 Yii Software LLC
- * @license https://www.yiiframework.com/license/
+ * @license http://www.yiiframework.com/license/
  */
 
 namespace yii\elasticsearch;
@@ -17,7 +17,7 @@ use yii\log\Logger;
 use yii\log\Target;
 
 /**
- * ElasticsearchTarget stores log messages in a Elasticsearch index.
+ * ElasticsearchTarget stores log messages in a elasticsearch index.
  *
  * @author Eugene Terentev <eugene@terentev.net>
  * @since 2.0.5
@@ -33,8 +33,8 @@ class ElasticsearchTarget extends Target
      */
     public $type = 'log';
     /**
-     * @var Connection|array|string the Elasticsearch connection object or the application component ID
-     * of the Elasticsearch connection.
+     * @var Connection|array|string the elasticsearch connection object or the application component ID
+     * of the elasticsearch connection.
      */
     public $db = 'elasticsearch';
     /**
@@ -78,11 +78,7 @@ class ElasticsearchTarget extends Target
     {
         $messages = array_map([$this, 'prepareMessage'], $this->messages);
         $body = implode("\n", $messages) . "\n";
-        if ($this->db->dslVersion >= 7) {
-            $this->db->post([$this->index, '_bulk'], $this->options, $body);
-        } else {
-            $this->db->post([$this->index, $this->type, '_bulk'], $this->options, $body);
-        }
+        $this->db->post([$this->index, $this->type, '_bulk'], $this->options, $body);
     }
 
     /**
@@ -150,15 +146,20 @@ class ElasticsearchTarget extends Target
             $result['trace'] = $message[4];
         }
 
-        if (!is_string($text)) {
-            // exceptions may not be serializable if in the call stack somewhere is a Closure
-            if ($text instanceof \Throwable || $text instanceof \Exception) {
-                $text = (string) $text;
-            } else {
-                $text = VarDumper::export($text);
-            }
+        //Exceptions get parsed into an array, text and arrays are passed as is, other types are var_dumped
+        if ($text instanceof \Exception) {
+            //convert exception to array for easier analysis
+            $result['message'] = [
+                'message' => $text->getMessage(),
+                'file' => $text->getFile(),
+                'line' => $text->getLine(),
+                'trace' => $text->getTraceAsString(),
+            ];
+        } elseif (is_array($text) || is_string($text)) {
+            $result['message'] = $text;
+        } else {
+            $result['message'] = VarDumper::export($text);
         }
-        $result['message'] = $text;
 
         if ($this->includeContext) {
             $result['context'] = $this->getContextMessage();

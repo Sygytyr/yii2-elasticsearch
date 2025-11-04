@@ -1,8 +1,8 @@
 <?php
 /**
- * @link https://www.yiiframework.com/
+ * @link http://www.yiiframework.com/
  * @copyright Copyright (c) 2008 Yii Software LLC
- * @license https://www.yiiframework.com/license/
+ * @license http://www.yiiframework.com/license/
  */
 
 namespace yii\elasticsearch;
@@ -45,7 +45,7 @@ use yii\db\ActiveRelationTrait;
  * ```php
  * $customers = Customer::find()->with('orders')->asArray()->all();
  * ```
- * > NOTE: Elasticsearch limits the number of records returned to 10 records by default.
+ * > NOTE: elasticsearch limits the number of records returned to 10 records by default.
  * > If you expect to get more records you should specify limit explicitly.
  *
  * Relational query
@@ -64,7 +64,7 @@ use yii\db\ActiveRelationTrait;
  * This methods may only be called in a relational context. Same is true for [[inverseOf()]], which
  * marks a relation as inverse of another relation.
  *
- * > Note: Elasticsearch limits the number of records returned by any query to 10 records by default.
+ * > Note: elasticsearch limits the number of records returned by any query to 10 records by default.
  * > If you expect to get more records you should specify limit explicitly in relation definition.
  * > This is also important for relations that use [[via()]] so that if via records are limited to 10
  * > the relations records can also not be more than 10.
@@ -87,7 +87,7 @@ class ActiveQuery extends Query implements ActiveQueryInterface
 
     /**
      * Constructor.
-     * @param string $modelClass the model class associated with this query
+     * @param array $modelClass the model class associated with this query
      * @param array $config configurations to be applied to the newly created query object
      */
     public function __construct($modelClass, $config = [])
@@ -295,18 +295,7 @@ class ActiveQuery extends Query implements ActiveQueryInterface
                 ],
             ];
         }
-
-        $command = $this->createCommand($db);
-        $result = $command->search($options);
-        if ($result === false) {
-            throw new Exception('Elasticsearch search query failed.', [
-                'index' => $command->index,
-                'type' => $command->type,
-                'query' => $command->queryParts,
-                'options' => $command->options,
-            ]);
-        }
-
+        $result = $this->createCommand($db)->search($options);
         // TODO implement with() for asArray
         if (!empty($result['hits']['hits']) && !$this->asArray) {
             $models = $this->createModels($result['hits']['hits']);
@@ -327,13 +316,11 @@ class ActiveQuery extends Query implements ActiveQueryInterface
      */
     public function column($field, $db = null)
     {
-        if ($field === '_id') {
+        if ($field == '_id') {
             $command = $this->createCommand($db);
+            $command->queryParts['fields'] = [];
             $command->queryParts['_source'] = false;
             $result = $command->search();
-            if ($result === false) {
-                throw new Exception('Elasticsearch search query failed.');
-            }
             if (empty($result['hits']['hits'])) {
                 return [];
             }
