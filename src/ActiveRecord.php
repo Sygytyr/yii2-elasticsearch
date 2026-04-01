@@ -468,7 +468,7 @@ class ActiveRecord extends BaseActiveRecord
             $this->getPrimaryKey(),
             $options
         );
-        
+
         if ($response === false) {
             return false;
         }
@@ -564,7 +564,7 @@ class ActiveRecord extends BaseActiveRecord
         try {
             $result = static::getDb()->createCommand()->update(
                 static::index(),
-                static::type(),
+                '_doc',
                 $this->getOldPrimaryKey(false),
                 $values,
                 $options
