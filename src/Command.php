@@ -222,7 +222,7 @@ class Command extends Component
      * @return mixed
      * @see http://www.elastic.co/guide/en/elasticsearch/reference/current/docs-update.html
      */
-    public function update($index, $type, $id, $data, $options = [])
+    public function update($index, $id, $data, $options = [])
     {
         $body = [
             'doc' => empty($data) ? new \stdClass() : $data,
@@ -232,7 +232,7 @@ class Command extends Component
             unset($options["detect_noop"]);
         }
 
-        return $this->db->post([$index, $type, $id, '_update'], $options, Json::encode($body));
+        return $this->db->post([$index, $id, '_update'], $options, Json::encode($body));
     }
 
     // TODO bulk http://www.elastic.co/guide/en/elasticsearch/reference/current/docs-bulk.html
@@ -567,7 +567,7 @@ class Command extends Component
     public function setMapping($index, $type, $mapping, $options = [])
     {
         $body = $mapping !== null ? (is_string($mapping) ? $mapping : Json::encode($mapping)) : null;
-        
+
         return $this->db->put([$index, '_mapping', $type], $options, $body);
     }
 

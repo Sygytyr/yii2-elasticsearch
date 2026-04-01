@@ -564,7 +564,6 @@ class ActiveRecord extends BaseActiveRecord
         try {
             $result = static::getDb()->createCommand()->update(
                 static::index(),
-                '_doc',
                 $this->getOldPrimaryKey(false),
                 $values,
                 $options
