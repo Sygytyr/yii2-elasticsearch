@@ -232,7 +232,7 @@ class Command extends Component
             unset($options["detect_noop"]);
         }
 
-        return $this->db->post([$index, $id, '_update'], $options, Json::encode($body));
+        return $this->db->post([$index, '_update', $id], $options, Json::encode($body));
     }
 
     // TODO bulk http://www.elastic.co/guide/en/elasticsearch/reference/current/docs-bulk.html
